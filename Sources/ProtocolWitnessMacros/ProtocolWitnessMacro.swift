@@ -32,11 +32,42 @@ public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
         providingMembersOf declaration: some DeclGroupSyntax,
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
-        guard declaration.is(ClassDeclSyntax.self) else {
-            throw ProtocolWitnessDiagnostic.onlyClasses
+        guard let classDecl = declaration.as(ClassDeclSyntax.self) else {
+            context.diagnose(Diagnostic(node: declaration, message: ProtocolWitnessDiagnostic.onlyClasses))
+            return []
         }
 
-        return []
+        let functions = classDecl.memberBlock.members.compactMap { blockItem in
+            blockItem.decl.as(FunctionDeclSyntax.self)
+        }
+
+        let witnessVariables: [VariableDeclSyntax] = classDecl.memberBlock.members.compactMap { blockItem -> VariableDeclSyntax? in
+            guard let function = blockItem.decl.as(FunctionDeclSyntax.self) else { return nil }
+
+            var variableName = function.name.text
+            var closureParameters: [TupleTypeElementSyntax] = []
+            for parameter in function.signature.parameterClause.parameters {
+                if parameter.firstName.tokenKind == .wildcard {
+                    let closureParam = TupleTypeElementSyntax(firstName: .wildcardToken(), secondName: parameter.secondName, colon: .colonToken(), type: parameter.type)
+                    closureParameters.append(closureParam)
+                } else {
+                    variableName.append(parameter.firstName.text.capitalizeFirstLetter())
+                    let closureParam = TupleTypeElementSyntax(type: parameter.type)
+                    closureParameters.append(closureParam)
+                }
+            }
+            
+
+            let closureParameterList = TupleTypeElementListSyntax(closureParameters)
+            let voidReturnType = IdentifierTypeSyntax(name: .identifier("Void"))
+            let returnType: TypeSyntax = (function.signature.returnClause?.type) ?? voidReturnType.as(TypeSyntax.self)!
+            let returnClause = ReturnClauseSyntax.init(arrow: .arrowToken(), type: returnType)
+            let closureType = TypeAnnotationSyntax(colon: .colonToken(), type: FunctionTypeSyntax(parameters: closureParameterList, returnClause: returnClause))
+            let binding = PatternBindingSyntax(pattern: IdentifierPatternSyntax(identifier: .identifier(variableName)), typeAnnotation: closureType)
+            return VariableDeclSyntax.init(bindingSpecifier: .keyword(.var), bindings: [binding])
+        }
+
+        return witnessVariables.compactMap { $0.as(DeclSyntax.self) }
     }
 
     public static func expansion(
@@ -51,12 +82,12 @@ public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
         let memberBlock = classDecl.memberBlock
         let initializers = memberBlock.members.compactMap { $0.decl.as(InitializerDeclSyntax.self) }
 
-        var witnessInitializers = try initializers.map { initializer in
-            try makeWitnessInitializer(parameters: initializer.signature.parameterClause.parameters)
+        var witnessInitializers = initializers.map { initializer in
+            makeWitnessInitializer(className: classDecl.name, parameters: initializer.signature.parameterClause.parameters)
         }
         if witnessInitializers.isEmpty {
             // If the class doesn't have any initializers, add an empty one to the witness
-            try witnessInitializers.append(makeWitnessInitializer())
+            witnessInitializers.append(makeWitnessInitializer(className: classDecl.name))
         }
 
         let blockItems = witnessInitializers.enumerated().map { index, initializer in
@@ -67,7 +98,7 @@ public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
         }
 
         let witnessExtension: DeclSyntax = """
-        extension \(classDecl.name).Witness {
+        extension \(classDecl.name.trimmed).Witness {
             \(MemberBlockItemListSyntax(blockItems))
         }
         """
@@ -76,7 +107,7 @@ public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
 
     // MARK: - Private helpers
 
-    private static func makeWitnessInitializer(parameters: FunctionParameterListSyntax = []) throws -> InitializerDeclSyntax {
+    private static func makeWitnessInitializer(className: TokenSyntax, parameters: FunctionParameterListSyntax = []) -> InitializerDeclSyntax {
         let arguments: [LabeledExprSyntax] = parameters.compactMap { parameter in
             if parameter.firstName.tokenKind == .wildcard {
                 guard let secondName = parameter.secondName else {
@@ -92,7 +123,7 @@ public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
 
         let syntax: DeclSyntax = """
         init(\(parameters)) {
-            self.init(MyAPI(\(LabeledExprListSyntax(arguments))))
+            self.init(\(className.trimmed)(\(LabeledExprListSyntax(arguments))))
         }
         """
         return syntax.as(InitializerDeclSyntax.self)!
@@ -107,7 +138,7 @@ struct ProtocolWitnessPlugin: CompilerPlugin {
     ]
 }
 
-enum ProtocolWitnessDiagnostic: String, DiagnosticMessage, Error {
+enum ProtocolWitnessDiagnostic: String, DiagnosticMessage {
     case unknownError
     case onlyClasses
 
@@ -126,5 +157,18 @@ enum ProtocolWitnessDiagnostic: String, DiagnosticMessage, Error {
 
     var severity: DiagnosticSeverity {
         .error
+    }
+}
+
+private extension String {
+    func capitalizeFirstLetter() -> String {
+        guard count > 0 else { return self }
+        let firstLetter = prefix(1).capitalized
+        if count == 1 {
+            return firstLetter
+        } else {
+            let restOfString = self[index(after: startIndex)...]
+            return "\(firstLetter)\(restOfString)"
+        }
     }
 }

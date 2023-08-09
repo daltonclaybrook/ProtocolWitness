@@ -99,7 +99,7 @@ final class ProtocolWitnessTests: XCTestCase {
                 }
             }
 
-            extension MyAPI .Witness {
+            extension MyAPI.Witness {
                 init(apiToken token: String) {
                     self.init(MyAPI(apiToken : token))
                 }
@@ -108,6 +108,40 @@ final class ProtocolWitnessTests: XCTestCase {
                 }
                 init(fooBar: String) {
                     self.init(MyAPI(fooBar: fooBar))
+                }
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    func testBasicProtocolWitnessIsGenerated() {
+        assertMacroExpansion(
+            """
+            @ProtocolWitness
+            class FooBar {
+                var exampleClosure: (_ foo: String) async throws -> User?
+                var exampleClosure2: (String) async throws -> Void
+
+                func doSomething() {}
+                func doSomethingGeneric<T>(foo: T) {}
+                func fetch(userID: String) async throws -> User? { nil }
+                func fetchUser(byName name: String) async throws -> User? { nil }
+                func fetchUserName(_ name: String) async throws -> User? { nil }
+            }
+            """,
+            expandedSource: """
+            class FooBar {
+                func doSomething() {}
+                func doSomethingGeneric<T>(foo: T) {}
+                func fetch(userID: String) async throws -> User? { nil }
+                func fetchUser(byName name: String) async throws -> User? { nil }
+                func fetchUserName(_ name: String) async throws -> User? { nil }
+            }
+
+            extension FooBar.Witness {
+                init() {
+                    self.init(FooBar())
                 }
             }
             """,
@@ -126,7 +160,7 @@ final class ProtocolWitnessTests: XCTestCase {
             final class MyAPI {
             }
 
-            extension MyAPI .Witness {
+            extension MyAPI.Witness {
                 init() {
                     self.init(MyAPI())
                 }
