@@ -71,6 +71,66 @@ final class ProtocolWitnessTests: XCTestCase {
             }
             """#,
             expandedSource: """
+            final class MyAPI {
+                struct User {}
+
+                let apiToken: String
+
+                init(apiToken token: String) {
+                    self.apiToken = token
+                }
+
+                init(_ token: String) {
+                    self.apiToken = token
+                }
+
+                init(fooBar: String) {
+                    self.init(apiToken: fooBar)
+                }
+
+                func fetchUsers() async throws -> [User] {
+                    return []
+                }
+
+                func save(user: User) async throws {
+                }
+
+                func doSomethingGeneric<T>(value: T) {
+                }
+            }
+
+            extension MyAPI .Witness {
+                init(apiToken token: String) {
+                    self.init(MyAPI(apiToken : token))
+                }
+                init(_ token: String) {
+                    self.init(MyAPI(token))
+                }
+                init(fooBar: String) {
+                    self.init(MyAPI(fooBar: fooBar))
+                }
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    func test_ifClassHasNoInitializers_oneIsGeneratedForWitness() throws {
+        assertMacroExpansion(
+            #"""
+            @ProtocolWitness
+            final class MyAPI {
+            }
+            """#,
+            expandedSource: """
+            final class MyAPI {
+            }
+
+            extension MyAPI .Witness {
+                init() {
+                    self.init(MyAPI())
+                }
+            }
             """,
             macros: testMacros
         )

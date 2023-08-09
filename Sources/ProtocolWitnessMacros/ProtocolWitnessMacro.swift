@@ -26,7 +26,7 @@ public struct StringifyMacro: ExpressionMacro {
     }
 }
 
-public struct ProtocolWitnessMacro: MemberMacro {
+public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -36,9 +36,21 @@ public struct ProtocolWitnessMacro: MemberMacro {
             throw ProtocolWitnessDiagnostic.onlyClasses
         }
 
-        let memberBlock = declaration.memberBlock
+        return []
+    }
+
+    public static func expansion(
+        of node: AttributeSyntax,
+        providingPeersOf declaration: some DeclSyntaxProtocol,
+        in context: some MacroExpansionContext
+    ) throws -> [DeclSyntax] {
+        guard let classDecl = declaration.as(ClassDeclSyntax.self) else {
+            return []
+        }
+
+        let memberBlock = classDecl.memberBlock
         let initializers = memberBlock.members.compactMap { $0.decl.as(InitializerDeclSyntax.self) }
-        
+
         var witnessInitializers = try initializers.map { initializer in
             try makeWitnessInitializer(parameters: initializer.signature.parameterClause.parameters)
         }
@@ -47,17 +59,19 @@ public struct ProtocolWitnessMacro: MemberMacro {
             try witnessInitializers.append(makeWitnessInitializer())
         }
 
-        let blockItems = witnessInitializers.map { initializer in
-            MemberBlockItemSyntax(decl: initializer)
+        let blockItems = witnessInitializers.enumerated().map { index, initializer in
+            MemberBlockItemSyntax(
+                leadingTrivia: index == 0 ? nil : .newline,
+                decl: initializer
+            )
         }
 
-        let witnessDeclaration: DeclSyntax = """
-        struct Witness {
-        \(MemberBlockItemListSyntax(blockItems))
+        let witnessExtension: DeclSyntax = """
+        extension \(classDecl.name).Witness {
+            \(MemberBlockItemListSyntax(blockItems))
         }
         """
-
-        return [witnessDeclaration]
+        return [witnessExtension]
     }
 
     // MARK: - Private helpers
