@@ -27,6 +27,7 @@ public struct StringifyMacro: ExpressionMacro {
 }
 
 public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
+    /// Generates the `Witness` struct declaration with closure variables
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -35,10 +36,6 @@ public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
         guard let classDecl = declaration.as(ClassDeclSyntax.self) else {
             context.diagnose(Diagnostic(node: declaration, message: ProtocolWitnessDiagnostic.onlyClasses))
             return []
-        }
-
-        let functions = classDecl.memberBlock.members.compactMap { blockItem in
-            blockItem.decl.as(FunctionDeclSyntax.self)
         }
 
         let witnessVariables: [VariableDeclSyntax] = classDecl.memberBlock.members.compactMap { blockItem -> VariableDeclSyntax? in
@@ -56,20 +53,44 @@ public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
                     closureParameters.append(closureParam)
                 }
             }
-            
 
-            let closureParameterList = TupleTypeElementListSyntax(closureParameters)
+            let functionEffects = function.signature.effectSpecifiers
             let voidReturnType = IdentifierTypeSyntax(name: .identifier("Void"))
-            let returnType: TypeSyntax = (function.signature.returnClause?.type) ?? voidReturnType.as(TypeSyntax.self)!
-            let returnClause = ReturnClauseSyntax.init(arrow: .arrowToken(), type: returnType)
-            let closureType = TypeAnnotationSyntax(colon: .colonToken(), type: FunctionTypeSyntax(parameters: closureParameterList, returnClause: returnClause))
-            let binding = PatternBindingSyntax(pattern: IdentifierPatternSyntax(identifier: .identifier(variableName)), typeAnnotation: closureType)
-            return VariableDeclSyntax.init(bindingSpecifier: .keyword(.var), bindings: [binding])
+            return VariableDeclSyntax(bindingSpecifier: .keyword(.var)) {
+                PatternBindingSyntax(
+                    leadingTrivia: .space,
+                    pattern: IdentifierPatternSyntax(identifier: .identifier(variableName)),
+                    typeAnnotation: TypeAnnotationSyntax(
+                        colon: .colonToken(),
+                        type: FunctionTypeSyntax(
+                            parameters: TupleTypeElementListSyntax(closureParameters),
+                            effectSpecifiers: TypeEffectSpecifiersSyntax(
+                                asyncSpecifier: functionEffects?.asyncSpecifier,
+                                throwsSpecifier: functionEffects?.throwsSpecifier
+                            ),
+                            returnClause: ReturnClauseSyntax.init(
+                                arrow: .arrowToken(),
+                                type: (function.signature.returnClause?.type) ?? voidReturnType.as(TypeSyntax.self)!
+                            )
+                        )
+                    )
+                )
+            }
         }
 
-        return witnessVariables.compactMap { $0.as(DeclSyntax.self) }
-    }
+        let witnessMemberBlockItems = witnessVariables.enumerated().map { index, variable in
+            MemberBlockItemSyntax(leadingTrivia: index == 0 ? nil : .newline, decl: variable)
+        }
 
+        let structDecl: DeclSyntax = """
+        struct Witness {
+            \(MemberBlockItemListSyntax(witnessMemberBlockItems))
+        }
+        """
+        return [structDecl]
+    }
+    
+    /// Generates an extension for the `Witness` that adds the live implementation
     public static func expansion(
         of node: AttributeSyntax,
         providingPeersOf declaration: some DeclSyntaxProtocol,

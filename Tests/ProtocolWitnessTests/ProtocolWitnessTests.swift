@@ -120,9 +120,6 @@ final class ProtocolWitnessTests: XCTestCase {
             """
             @ProtocolWitness
             class FooBar {
-                var exampleClosure: (_ foo: String) async throws -> User?
-                var exampleClosure2: (String) async throws -> Void
-
                 func doSomething() {}
                 func doSomethingGeneric<T>(foo: T) {}
                 func fetch(userID: String) async throws -> User? { nil }
