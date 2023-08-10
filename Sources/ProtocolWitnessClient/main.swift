@@ -9,7 +9,7 @@ print("The value \(result) was produced by the code \"\(code)\"")
 
 struct User {}
 
-@ProtocolWitness
+//@ProtocolWitness
 final class MyAPI {
     let apiToken: String
 
@@ -25,6 +25,18 @@ final class MyAPI {
     }
 
     func doSomethingGeneric<T>(value: T) {
+    }
+
+    struct Witness {
+        var fetchUsers: () async throws -> [User]
+        var saveUser: (User) async throws -> Void
+
+        static func live(_ underlying: MyAPI) -> Witness {
+            self.init(
+                fetchUsers: { try await underlying.fetchUsers() },
+                saveUser: { try await underlying.save(user: $0) }
+            )
+        }
     }
 }
 

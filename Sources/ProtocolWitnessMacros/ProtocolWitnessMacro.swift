@@ -38,8 +38,18 @@ public struct ProtocolWitnessMacro: MemberMacro {
             return []
         }
 
-        let witnessVariables = makeWitnessClosureVariables(for: classDecl, in: context)
-        let witnessMemberBlock = makeMemberBlock(with: witnessVariables)
+        let witnessFunctions = classDecl.memberBlock.members.compactMap { blockItem -> FunctionDeclSyntax? in
+            guard let function = blockItem.decl.as(FunctionDeclSyntax.self) else { return nil }
+            guard function.genericParameterClause == nil else {
+                context.diagnose(Diagnostic(node: function, message: ProtocolWitnessDiagnostic.noGenericProtocolWitnesses))
+                return nil
+            }
+            return function
+        }
+
+        let witnessVariables = makeWitnessClosureVariables(witnessFunctions: witnessFunctions, in: context)
+        let liveFunction = makeLiveFunction(classDecl: classDecl, underlyingFunctions: witnessFunctions, witnessVariables: witnessVariables)
+        let witnessMemberBlock = makeMemberBlock(with: witnessVariables + [liveFunction])
 
         let structDecl: DeclSyntax = """
         struct Witness {
@@ -51,15 +61,8 @@ public struct ProtocolWitnessMacro: MemberMacro {
 
     // MARK: - Private helpers
 
-    private static func makeWitnessClosureVariables(for classDecl: ClassDeclSyntax, in context: some MacroExpansionContext) -> [VariableDeclSyntax] {
-        classDecl.memberBlock.members.compactMap { blockItem -> VariableDeclSyntax? in
-            guard let function = blockItem.decl.as(FunctionDeclSyntax.self) else { return nil }
-
-            guard function.genericParameterClause == nil else {
-                context.diagnose(Diagnostic(node: function, message: ProtocolWitnessDiagnostic.noGenericProtocolWitnesses))
-                return nil
-            }
-
+    private static func makeWitnessClosureVariables(witnessFunctions: [FunctionDeclSyntax], in context: some MacroExpansionContext) -> [VariableDeclSyntax] {
+        witnessFunctions.map { function -> VariableDeclSyntax in
             var variableName = function.name.text
             var closureParameters: [TupleTypeElementSyntax] = []
             for parameter in function.signature.parameterClause.parameters {
@@ -96,6 +99,55 @@ public struct ProtocolWitnessMacro: MemberMacro {
                 )
             }
         }
+    }
+
+    private static func makeLiveFunction(
+        classDecl: ClassDeclSyntax,
+        underlyingFunctions: [FunctionDeclSyntax],
+        witnessVariables: [VariableDeclSyntax]
+    ) -> DeclSyntax {
+        let arguments: [LabeledExprSyntax] = zip(underlyingFunctions, witnessVariables).enumerated().compactMap { index, functionAndVariable -> LabeledExprSyntax? in
+            let (function, variable) = functionAndVariable
+            guard let label = variable.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?.identifier else {
+                assertionFailure("Failed to determine label")
+                return nil
+            }
+
+            let underlyingFunctionArguments: [LabeledExprSyntax] = function.signature.parameterClause.parameters.enumerated().map { index, parameter in
+                let label: TokenSyntax? = parameter.firstName.tokenKind == .wildcard ? nil : parameter.firstName.trimmed
+                let expression: ExprSyntax = "$\(literal: index)"
+                return LabeledExprSyntax(label: label, colon: label != nil ? .colonToken() : nil, expression: expression)
+            }
+            let argumentList = LabeledExprListSyntax(underlyingFunctionArguments)
+            var functionCallExpression: ExprSyntax = "underlying.\(function.name.trimmed)(\(argumentList))"
+            if function.signature.effectSpecifiers?.asyncSpecifier != nil {
+                functionCallExpression = "await \(functionCallExpression)"
+            }
+            if function.signature.effectSpecifiers?.throwsSpecifier != nil {
+                functionCallExpression = "try \(functionCallExpression)"
+            }
+
+            let functionCallCodeBlock = CodeBlockItemSyntax(item: .expr(functionCallExpression))
+            let closureExpression = ClosureExprSyntax(leftBrace: .leftBraceToken(), statements: [functionCallCodeBlock], rightBrace: .rightBraceToken())
+            let addComma = index != witnessVariables.count - 1
+            return LabeledExprSyntax(
+                leadingTrivia: index == 0 ? nil : .newline,
+                label: label,
+                colon: .colonToken(),
+                expression: closureExpression,
+                trailingComma: addComma ? .commaToken() : nil
+            )
+        }
+        let argumentList = LabeledExprListSyntax(arguments)
+
+        return """
+
+        static func live(_ underlying: \(classDecl.name.trimmed)) -> Witness {
+            self.init(
+                \(argumentList)
+            )
+        }
+        """
     }
 
     private static func makeMemberBlock(with decls: [any DeclSyntaxProtocol]) -> MemberBlockItemListSyntax {

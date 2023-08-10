@@ -125,6 +125,7 @@ final class ProtocolWitnessTests: XCTestCase {
                 func fetch(userID: String) async throws -> User? { nil }
                 func fetchUser(byName name: String) async throws -> User? { nil }
                 func fetchUserName(_ name: String) async throws -> User? { nil }
+                func searchUsers(name: String, age: Int) async throws -> [User] { [] }
             }
             """,
             expandedSource: """
@@ -134,11 +135,34 @@ final class ProtocolWitnessTests: XCTestCase {
                 func fetch(userID: String) async throws -> User? { nil }
                 func fetchUser(byName name: String) async throws -> User? { nil }
                 func fetchUserName(_ name: String) async throws -> User? { nil }
-            }
+                func searchUsers(name: String, age: Int) async throws -> [User] { [] }
 
-            extension FooBar.Witness {
-                init() {
-                    self.init(FooBar())
+                struct Witness {
+                    var doSomething: () -> Void
+                    var fetchUserID: (String) async throws -> User?
+                    var fetchUserByName: (String) async throws -> User?
+                    var fetchUserName: (_name: String) async throws -> User?
+                    var searchUsersNameAge: (StringInt) async throws -> [User]
+
+                    static func live(_ underlying: FooBar) -> Witness {
+                        self.init(
+                             doSomething: {
+                                 underlying.doSomething()
+                             },
+                             fetchUserID: {
+                                 try await underlying.fetch(userID: $0)
+                             },
+                             fetchUserByName: {
+                                 try await underlying.fetchUser(byName: $0)
+                             },
+                             fetchUserName: {
+                                 try await underlying.fetchUserName($0)
+                             },
+                             searchUsersNameAge: {
+                                 try await underlying.searchUsers(name: $0age:$1)
+                             }
+                        )
+                    }
                 }
             }
             """,
