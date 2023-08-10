@@ -11,5 +11,4 @@
 public macro stringify<T>(_ value: T) -> (T, String) = #externalMacro(module: "ProtocolWitnessMacros", type: "StringifyMacro")
 
 @attached(member, names: named(Witness))
-@attached(peer, names: named(Witness))
 public macro ProtocolWitness() = #externalMacro(module: "ProtocolWitnessMacros", type: "ProtocolWitnessMacro")

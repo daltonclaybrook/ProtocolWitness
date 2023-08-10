@@ -26,7 +26,7 @@ public struct StringifyMacro: ExpressionMacro {
     }
 }
 
-public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
+public struct ProtocolWitnessMacro: MemberMacro {
     /// Generates the `Witness` struct declaration with closure variables
     public static func expansion(
         of node: AttributeSyntax,
@@ -40,6 +40,11 @@ public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
 
         let witnessVariables: [VariableDeclSyntax] = classDecl.memberBlock.members.compactMap { blockItem -> VariableDeclSyntax? in
             guard let function = blockItem.decl.as(FunctionDeclSyntax.self) else { return nil }
+
+            guard function.genericParameterClause == nil else {
+                context.diagnose(Diagnostic(node: function, message: ProtocolWitnessDiagnostic.noGenericProtocolWitnesses))
+                return nil
+            }
 
             var variableName = function.name.text
             var closureParameters: [TupleTypeElementSyntax] = []
@@ -89,9 +94,11 @@ public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
         """
         return [structDecl]
     }
-    
+
+    // MARK: - Private helpers
+
     /// Generates an extension for the `Witness` that adds the live implementation
-    public static func expansion(
+    private static func removed_expansion(
         of node: AttributeSyntax,
         providingPeersOf declaration: some DeclSyntaxProtocol,
         in context: some MacroExpansionContext
@@ -125,8 +132,6 @@ public struct ProtocolWitnessMacro: MemberMacro, PeerMacro {
         """
         return [witnessExtension]
     }
-
-    // MARK: - Private helpers
 
     private static func makeWitnessInitializer(className: TokenSyntax, parameters: FunctionParameterListSyntax = []) -> InitializerDeclSyntax {
         let arguments: [LabeledExprSyntax] = parameters.compactMap { parameter in
@@ -162,6 +167,7 @@ struct ProtocolWitnessPlugin: CompilerPlugin {
 enum ProtocolWitnessDiagnostic: String, DiagnosticMessage {
     case unknownError
     case onlyClasses
+    case noGenericProtocolWitnesses
 
     var message: String {
         switch self {
@@ -169,6 +175,8 @@ enum ProtocolWitnessDiagnostic: String, DiagnosticMessage {
             return "An unknown error occurred"
         case .onlyClasses:
             return "Protocol witnesses are only supported for classes at this time"
+        case .noGenericProtocolWitnesses:
+            return "Function with generic parameters will not be included in the protocol witness"
         }
     }
 
@@ -177,7 +185,12 @@ enum ProtocolWitnessDiagnostic: String, DiagnosticMessage {
     }
 
     var severity: DiagnosticSeverity {
-        .error
+        switch self {
+        case .unknownError, .onlyClasses:
+            return .error
+        case .noGenericProtocolWitnesses:
+            return .note
+        }
     }
 }
 
