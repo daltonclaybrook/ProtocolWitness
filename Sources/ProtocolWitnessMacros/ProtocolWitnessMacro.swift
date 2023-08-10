@@ -38,7 +38,21 @@ public struct ProtocolWitnessMacro: MemberMacro {
             return []
         }
 
-        let witnessVariables: [VariableDeclSyntax] = classDecl.memberBlock.members.compactMap { blockItem -> VariableDeclSyntax? in
+        let witnessVariables = makeWitnessClosureVariables(for: classDecl, in: context)
+        let witnessMemberBlock = makeMemberBlock(with: witnessVariables)
+
+        let structDecl: DeclSyntax = """
+        struct Witness {
+            \(witnessMemberBlock)
+        }
+        """
+        return [structDecl]
+    }
+
+    // MARK: - Private helpers
+
+    private static func makeWitnessClosureVariables(for classDecl: ClassDeclSyntax, in context: some MacroExpansionContext) -> [VariableDeclSyntax] {
+        classDecl.memberBlock.members.compactMap { blockItem -> VariableDeclSyntax? in
             guard let function = blockItem.decl.as(FunctionDeclSyntax.self) else { return nil }
 
             guard function.genericParameterClause == nil else {
@@ -82,20 +96,14 @@ public struct ProtocolWitnessMacro: MemberMacro {
                 )
             }
         }
-
-        let witnessMemberBlockItems = witnessVariables.enumerated().map { index, variable in
-            MemberBlockItemSyntax(leadingTrivia: index == 0 ? nil : .newline, decl: variable)
-        }
-
-        let structDecl: DeclSyntax = """
-        struct Witness {
-            \(MemberBlockItemListSyntax(witnessMemberBlockItems))
-        }
-        """
-        return [structDecl]
     }
 
-    // MARK: - Private helpers
+    private static func makeMemberBlock(with decls: [any DeclSyntaxProtocol]) -> MemberBlockItemListSyntax {
+        let members = decls.enumerated().map { index, decl in
+            MemberBlockItemSyntax(leadingTrivia: index == 0 ? nil : .newline, decl: decl)
+        }
+        return MemberBlockItemListSyntax(members)
+    }
 
     /// Generates an extension for the `Witness` that adds the live implementation
     private static func removed_expansion(

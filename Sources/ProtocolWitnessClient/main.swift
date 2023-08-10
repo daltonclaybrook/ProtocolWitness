@@ -27,3 +27,29 @@ final class MyAPI {
     func doSomethingGeneric<T>(value: T) {
     }
 }
+
+func makeLiveAPI(apiToken: String) -> MyAPI.Witness {
+    let underlying = MyAPI(apiToken: apiToken)
+    return MyAPI.Witness(
+        fetchUsers: {
+            try await underlying.fetchUsers()
+        },
+        saveUser: {
+            try await underlying.save(user: $0)
+        }
+    )
+}
+
+//extension MyAPI.Witness {
+//    static func live(apiToken: String) -> Self {
+//        let underlying = MyAPI(apiToken: apiToken)
+//        return self.init(
+//            fetchUsers: {
+//                try await underlying.fetchUsers()
+//            },
+//            saveUser: {
+//                try await underlying.save(user: $0)
+//            }
+//        )
+//    }
+//}
