@@ -4,6 +4,13 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
+@main
+struct ProtocolWitnessPlugin: CompilerPlugin {
+    let providingMacros: [Macro.Type] = [
+        ProtocolWitnessMacro.self
+    ]
+}
+
 /// Implementation of the `@ProtocolWitness` attached macro. This macro adds a struct called `Witness`
 /// to the class it's attached to. The struct contains member variables with closure types corresponding to all non-
 /// generic functions in the class. The struct also contains a static `live` function for constructing the live instance
@@ -15,12 +22,14 @@ public struct ProtocolWitnessMacro: MemberMacro {
         providingMembersOf declaration: some DeclGroupSyntax,
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
+        // Ensure that the declaration is a class
         guard let classDecl = declaration.as(ClassDeclSyntax.self) else {
             context.diagnose(Diagnostic(node: declaration, message: ProtocolWitnessDiagnostic.onlyClasses))
             return []
         }
 
-        let witnessFunctions = classDecl.memberBlock.members.compactMap { blockItem -> FunctionDeclSyntax? in
+        // Functions eligible to be witnessed
+        let eligibleFunctions = classDecl.memberBlock.members.compactMap { blockItem -> FunctionDeclSyntax? in
             guard let function = blockItem.decl.as(FunctionDeclSyntax.self) else { return nil }
             guard function.genericParameterClause == nil else {
                 context.diagnose(Diagnostic(node: function, message: ProtocolWitnessDiagnostic.noGenericProtocolWitnesses))
@@ -29,23 +38,24 @@ public struct ProtocolWitnessMacro: MemberMacro {
             return function
         }
 
-        let witnessVariables = makeWitnessClosureVariables(witnessFunctions: witnessFunctions, in: context)
-        let liveFunction = makeLiveFunction(classDecl: classDecl, underlyingFunctions: witnessFunctions, witnessVariables: witnessVariables)
+        // Generate the members of the Witness struct
+        let witnessVariables = makeWitnessClosureVariables(functions: eligibleFunctions, in: context)
+        let liveFunction = makeLiveFunction(classDecl: classDecl, functions: eligibleFunctions, witnessVariables: witnessVariables)
         let witnessMemberBlock = makeMemberBlock(with: witnessVariables + [liveFunction])
 
-        let structDecl: DeclSyntax = """
-
+        let witnessDecl: DeclSyntax = """
         struct Witness {
             \(witnessMemberBlock)
         }
         """
-        return [structDecl]
+        return [witnessDecl]
     }
 
     // MARK: - Private helpers
 
-    private static func makeWitnessClosureVariables(witnessFunctions: [FunctionDeclSyntax], in context: some MacroExpansionContext) -> [VariableDeclSyntax] {
-        witnessFunctions.map { function -> VariableDeclSyntax in
+    /// Generate the member variables of the `Witness` struct
+    private static func makeWitnessClosureVariables(functions: [FunctionDeclSyntax], in context: some MacroExpansionContext) -> [VariableDeclSyntax] {
+        functions.map { function -> VariableDeclSyntax in
             var variableName = function.name.text
             var closureParameters: [TupleTypeElementSyntax] = []
             let functionParameters = function.signature.parameterClause.parameters
@@ -97,12 +107,13 @@ public struct ProtocolWitnessMacro: MemberMacro {
         }
     }
 
+    /// Generate the "live" function of the `Witness` struct
     private static func makeLiveFunction(
         classDecl: ClassDeclSyntax,
-        underlyingFunctions: [FunctionDeclSyntax],
+        functions: [FunctionDeclSyntax],
         witnessVariables: [VariableDeclSyntax]
     ) -> DeclSyntax {
-        let arguments: [LabeledExprSyntax] = zip(underlyingFunctions, witnessVariables).enumerated().compactMap { index, functionAndVariable -> LabeledExprSyntax? in
+        let arguments: [LabeledExprSyntax] = zip(functions, witnessVariables).enumerated().compactMap { index, functionAndVariable -> LabeledExprSyntax? in
             let (function, variable) = functionAndVariable
             guard let label = variable.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?.identifier else {
                 assertionFailure("Failed to determine label")
@@ -160,13 +171,6 @@ public struct ProtocolWitnessMacro: MemberMacro {
         }
         return MemberBlockItemListSyntax(members)
     }
-}
-
-@main
-struct ProtocolWitnessPlugin: CompilerPlugin {
-    let providingMacros: [Macro.Type] = [
-        ProtocolWitnessMacro.self
-    ]
 }
 
 enum ProtocolWitnessDiagnostic: String, DiagnosticMessage {

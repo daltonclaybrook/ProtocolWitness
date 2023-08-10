@@ -25,7 +25,7 @@ func useTheAPI() async throws {
 
 extension MyAPI {
     static func mockWitness() -> MyAPI.Witness {
-        .init(
+        MyAPI.Witness(
             fetchUserID: { _ in User() },
             findUserByName: { _ in nil },
             saveUser: { _ in },
