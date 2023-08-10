@@ -3,4 +3,4 @@
 /// The struct also contains a static `live` function for constructing the live instance of the
 /// witness, which simply calls the underlying class from each closure implementation.
 @attached(member, names: named(Witness))
-public macro ProtocolWitness() = #externalMacro(module: "ProtocolWitnessMacros", type: "ProtocolWitnessMacro")
+public macro ProtocolWitness(ignoreGenericFunctions: Bool = false) = #externalMacro(module: "ProtocolWitnessMacros", type: "ProtocolWitnessMacro")

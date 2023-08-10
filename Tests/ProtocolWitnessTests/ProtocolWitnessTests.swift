@@ -18,7 +18,6 @@ final class ProtocolWitnessTests: XCTestCase {
             @ProtocolWitness
             class FooBar {
                 func doSomething() {}
-                func doSomethingGeneric<T>(foo: T) {}
                 func fetch(userID: String) async throws -> User? { nil }
                 func fetchUser(byName name: String) async throws -> User? { nil }
                 func fetchUserName(_ name: String) async throws -> User? { nil }
@@ -28,7 +27,6 @@ final class ProtocolWitnessTests: XCTestCase {
             expandedSource: """
             class FooBar {
                 func doSomething() {}
-                func doSomethingGeneric<T>(foo: T) {}
                 func fetch(userID: String) async throws -> User? { nil }
                 func fetchUser(byName name: String) async throws -> User? { nil }
                 func fetchUserName(_ name: String) async throws -> User? { nil }
@@ -63,9 +61,61 @@ final class ProtocolWitnessTests: XCTestCase {
                 }
             }
             """,
+            macros: testMacros
+        )
+    }
+
+    func test_ifGenericsAreNotIgnored_diagnosticsAreEmitted() {
+        assertMacroExpansion(
+            """
+            @ProtocolWitness
+            class MyAPI {
+                func doSomethingGeneric<T>(foo: T) {}
+            }
+            """,
+            expandedSource: """
+            class MyAPI {
+                func doSomethingGeneric<T>(foo: T) {}
+
+                struct Witness {
+
+                    static func live(_ underlying: MyAPI) -> Witness {
+                        self.init(
+
+                        )
+                    }
+                }
+            }
+            """,
             diagnostics: [
-                DiagnosticSpec(message: "Function with generic parameters will not be included in the protocol witness", line: 4, column: 5, severity: .note)
+                DiagnosticSpec(message: "Function with generic parameters will not be included in the protocol witness", line: 3, column: 5, severity: .warning)
             ],
+            macros: testMacros
+        )
+    }
+
+    func test_ifGenericsAreIgnored_noDiagnosticsAreEmitted() {
+        assertMacroExpansion(
+            """
+            @ProtocolWitness(ignoreGenericFunctions: true)
+            class MyAPI {
+                func doSomethingGeneric<T>(foo: T) {}
+            }
+            """,
+            expandedSource: """
+            class MyAPI {
+                func doSomethingGeneric<T>(foo: T) {}
+
+                struct Witness {
+
+                    static func live(_ underlying: MyAPI) -> Witness {
+                        self.init(
+
+                        )
+                    }
+                }
+            }
+            """,
             macros: testMacros
         )
     }

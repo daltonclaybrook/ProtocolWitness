@@ -22,6 +22,8 @@ public struct ProtocolWitnessMacro: MemberMacro {
         providingMembersOf declaration: some DeclGroupSyntax,
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
+        let ignoreGenerics = shouldIgnoreGenerics(with: node)
+
         // Ensure that the declaration is a class
         guard let classDecl = declaration.as(ClassDeclSyntax.self) else {
             context.diagnose(Diagnostic(node: declaration, message: ProtocolWitnessDiagnostic.onlyClasses))
@@ -32,7 +34,9 @@ public struct ProtocolWitnessMacro: MemberMacro {
         let eligibleFunctions = classDecl.memberBlock.members.compactMap { blockItem -> FunctionDeclSyntax? in
             guard let function = blockItem.decl.as(FunctionDeclSyntax.self) else { return nil }
             guard function.genericParameterClause == nil else {
-                context.diagnose(Diagnostic(node: function, message: ProtocolWitnessDiagnostic.noGenericProtocolWitnesses))
+                if !ignoreGenerics {
+                    context.diagnose(Diagnostic(node: function, message: ProtocolWitnessDiagnostic.noGenericProtocolWitnesses))
+                }
                 return nil
             }
             return function
@@ -171,6 +175,17 @@ public struct ProtocolWitnessMacro: MemberMacro {
         }
         return MemberBlockItemListSyntax(members)
     }
+
+    private static func shouldIgnoreGenerics(with node: AttributeSyntax) -> Bool {
+        guard
+            let arguments = node.arguments?.as(LabeledExprListSyntax.self),
+            let argument = arguments.first(where: { $0.label?.text == "ignoreGenericFunctions" }),
+            let expression = argument.expression.as(BooleanLiteralExprSyntax.self)
+        else {
+            return false
+        }
+        return expression.literal.tokenKind == .keyword(.true)
+    }
 }
 
 enum ProtocolWitnessDiagnostic: String, DiagnosticMessage {
@@ -198,7 +213,7 @@ enum ProtocolWitnessDiagnostic: String, DiagnosticMessage {
         case .unknownError, .onlyClasses:
             return .error
         case .noGenericProtocolWitnesses:
-            return .note
+            return .warning
         }
     }
 }

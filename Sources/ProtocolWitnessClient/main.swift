@@ -1,6 +1,8 @@
+import Combine
+import Foundation
 import ProtocolWitness
 
-struct User {}
+struct Post {}
 
 @ProtocolWitness
 class MyAPI {
@@ -10,26 +12,25 @@ class MyAPI {
         self.apiToken = apiToken
     }
 
-    func fetch(userID: String) async throws -> User { User() }
-    func findUser(byName name: String) async throws -> User? { nil }
-    func saveUser(_ user: User) async throws { }
-    func searchUsers(name: String, age: Int) async throws -> [User] { [] }
-    func doSomethingGeneric<T>(foo: T) {}
+    func fetchPost(byID id: String) async throws -> Post? { nil }
+    func fetchAllPosts() async throws -> [Post] { [] }
+    func createPost(_ post: Post) async throws { }
+    func searchPosts(byAuthor: String, beforeDate: Date) async throws -> [Post] { [] }
+    func doSomethingGeneric<T>(foo: T) { }
 }
 
-func useTheAPI() async throws {
-    let api: MyAPI.Witness = .live(MyAPI(apiToken: "abc123"))
-    let user = try await api.findUserByName("Dalton")
-    print("Found user: \(String(describing: user))")
-}
+@MainActor
+class MyViewModel: ObservableObject {
+    @Published var posts: [Post] = []
 
-extension MyAPI {
-    static func mockWitness() -> MyAPI.Witness {
-        MyAPI.Witness(
-            fetchUserID: { _ in User() },
-            findUserByName: { _ in nil },
-            saveUser: { _ in },
-            searchUsersNameAge: { _, _ in [] }
-        )
+    private let api: MyAPI
+    init(api: MyAPI) {
+        self.api = api
+    }
+
+    func onAppear() {
+        Task {
+            self.posts = try await api.fetchAllPosts()
+        }
     }
 }
