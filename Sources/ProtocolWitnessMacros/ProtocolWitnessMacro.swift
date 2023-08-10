@@ -65,13 +65,26 @@ public struct ProtocolWitnessMacro: MemberMacro {
         witnessFunctions.map { function -> VariableDeclSyntax in
             var variableName = function.name.text
             var closureParameters: [TupleTypeElementSyntax] = []
-            for parameter in function.signature.parameterClause.parameters {
+            let functionParameters = function.signature.parameterClause.parameters
+            for (index, parameter) in functionParameters.enumerated() {
+                let trailing: (comma: TokenSyntax, trivia: Trivia)? = index == functionParameters.count - 1 ? nil : (.commaToken(), .space)
                 if parameter.firstName.tokenKind == .wildcard {
-                    let closureParam = TupleTypeElementSyntax(firstName: .wildcardToken(), secondName: parameter.secondName, colon: .colonToken(), type: parameter.type)
+                    let closureParam = TupleTypeElementSyntax(
+                        firstName: .wildcardToken(trailingTrivia: .space),
+                        secondName: parameter.secondName,
+                        colon: .colonToken(),
+                        type: parameter.type,
+                        trailingComma: trailing?.comma,
+                        trailingTrivia: trailing?.trivia
+                    )
                     closureParameters.append(closureParam)
                 } else {
                     variableName.append(parameter.firstName.text.capitalizeFirstLetter())
-                    let closureParam = TupleTypeElementSyntax(type: parameter.type)
+                    let closureParam = TupleTypeElementSyntax(
+                        type: parameter.type,
+                        trailingComma: trailing?.comma,
+                        trailingTrivia: trailing?.trivia
+                    )
                     closureParameters.append(closureParam)
                 }
             }
@@ -113,10 +126,18 @@ public struct ProtocolWitnessMacro: MemberMacro {
                 return nil
             }
 
-            let underlyingFunctionArguments: [LabeledExprSyntax] = function.signature.parameterClause.parameters.enumerated().map { index, parameter in
+            let functionParameters = function.signature.parameterClause.parameters
+            let underlyingFunctionArguments: [LabeledExprSyntax] = functionParameters.enumerated().map { index, parameter in
                 let label: TokenSyntax? = parameter.firstName.tokenKind == .wildcard ? nil : parameter.firstName.trimmed
                 let expression: ExprSyntax = "$\(literal: index)"
-                return LabeledExprSyntax(label: label, colon: label != nil ? .colonToken() : nil, expression: expression)
+                let trailing: (comma: TokenSyntax, trivia: Trivia)? = index == functionParameters.count - 1 ? nil : (.commaToken(), .space)
+                return LabeledExprSyntax(
+                    label: label,
+                    colon: label != nil ? .colonToken() : nil,
+                    expression: expression,
+                    trailingComma: trailing?.comma,
+                    trailingTrivia: trailing?.trivia
+                )
             }
             let argumentList = LabeledExprListSyntax(underlyingFunctionArguments)
             var functionCallExpression: ExprSyntax = "underlying.\(function.name.trimmed)(\(argumentList))"

@@ -141,8 +141,8 @@ final class ProtocolWitnessTests: XCTestCase {
                     var doSomething: () -> Void
                     var fetchUserID: (String) async throws -> User?
                     var fetchUserByName: (String) async throws -> User?
-                    var fetchUserName: (_name: String) async throws -> User?
-                    var searchUsersNameAge: (StringInt) async throws -> [User]
+                    var fetchUserName: (_ name: String) async throws -> User?
+                    var searchUsersNameAge: (String, Int) async throws -> [User]
 
                     static func live(_ underlying: FooBar) -> Witness {
                         self.init(
@@ -159,13 +159,16 @@ final class ProtocolWitnessTests: XCTestCase {
                                  try await underlying.fetchUserName($0)
                              },
                              searchUsersNameAge: {
-                                 try await underlying.searchUsers(name: $0age:$1)
+                                 try await underlying.searchUsers(name: $0, age: $1)
                              }
                         )
                     }
                 }
             }
             """,
+            diagnostics: [
+                DiagnosticSpec(message: "Function with generic parameters will not be included in the protocol witness", line: 4, column: 5, severity: .note)
+            ],
             macros: testMacros
         )
     }
