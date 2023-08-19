@@ -63,12 +63,12 @@ final class APIClient {
     private let session = URLSession.shared
 
     func fetchAuthors(named: String) async throws -> [Author] {
-        let (data, _) = try await session.data(from: .authorsURL(name: name))
+        let (data, _) = try await session.data(from: .authorsURL(name: named))
         return try JSONDecoder().decode([Author].self, from: data)
     }
 }
 
-// The compiler will generate the following new type under the `APIClient` namespace:
+// The compiler will generate a type called "Witness" under the `APIClient` namespace:
 
 final class APIClient {
     ...
@@ -79,10 +79,41 @@ final class APIClient {
         static func live(_ underlying: APIClient) -> Witness {
             self.init(
                 fetchAuthorsNamed: {
-                    try await underlying.APIClient(named: $0)
+                    try await underlying.fetchAuthors(named: $0)
                 }
             )
         }
     }
+}
+```
+
+The following is an example of how to use the generated type in production code:
+
+```swift
+final class MyViewModel: ObservableObject {
+    @Published var authors: [Author] = []
+
+    private let apiClient: APIClient.Witness
+
+    init(apiClient: APIClient.Witness = .live(APIClient())) {
+        self.apiClient = apiClient
+    }
+
+    func onAppear() async throws {
+        self.authors = try await apiClient.fetchAuthorsNamed("Jimmy")
+    }
+}
+```
+
+And in your tests:
+
+```swift
+func test_whenViewAppears_authorsAreFetched() async throws {
+    var fetchedAuthor: String?
+    let viewModel = MyViewModel(apiClient: .init(
+        fetchAuthorsNamed: { fetchedAuthor = $0; return [] }
+    ))
+    try await viewModel.onAppear()
+    XCTAssertEqual(fetchedAuthor, "Jimmy")
 }
 ```
