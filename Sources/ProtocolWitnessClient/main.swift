@@ -4,7 +4,7 @@ import ProtocolWitness
 
 struct Post {}
 
-@ProtocolWitness
+@ProtocolWitness(ignoreGenericFunctions: true)
 class BlogAPI {
     let apiToken: String
 
@@ -23,8 +23,8 @@ class BlogAPI {
 class BlogPostsViewModel: ObservableObject {
     @Published var posts: [Post] = []
 
-    private let api: BlogAPI
-    init(api: BlogAPI) {
+    private let api: BlogAPI.Witness
+    init(api: BlogAPI.Witness = .live(BlogAPI(apiToken: "abc123"))) {
         self.api = api
     }
 

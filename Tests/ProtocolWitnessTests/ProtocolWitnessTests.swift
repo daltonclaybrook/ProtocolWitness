@@ -65,6 +65,70 @@ final class ProtocolWitnessTests: XCTestCase {
         )
     }
 
+    func testClosuresAreGeneratedForProperties() {
+        assertMacroExpansion(
+            """
+            @ProtocolWitness
+            class MyAPI {
+                var foo: Int = 123
+                let bar = "abc"
+                var fizz: Int { 123 }
+            }
+            """,
+            expandedSource: """
+            class MyAPI {
+                var foo: Int = 123
+                let bar = "abc"
+
+                struct Witness {
+                    var foo: () -> Int
+
+                    static func live(_ underlying: MyAPI) -> Witness {
+                        self.init(
+                            foo: {
+                                underlying.foo
+                            },
+                            bar: {
+                                underlying.bar
+                            }
+                        )
+                    }
+                }
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    func testWitnessIsGeneratedForActor() {
+        assertMacroExpansion(
+            """
+            @ProtocolWitness
+            actor MyAPI {
+                func doSomething()
+            }
+            """,
+            expandedSource: """
+            class MyAPI {
+                func doSomething()
+
+                struct Witness {
+                    var doSomething: () async -> Void
+
+                    static func live(_ underlying: MyAPI) -> Witness {
+                        self.init(
+                            doSomething: {
+                                await underlying.doSomething()
+                            }
+                        )
+                    }
+                }
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
     func test_ifGenericsAreNotIgnored_diagnosticsAreEmitted() {
         assertMacroExpansion(
             """

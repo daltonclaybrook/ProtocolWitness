@@ -11,6 +11,16 @@ struct ProtocolWitnessPlugin: CompilerPlugin {
     ]
 }
 
+struct DeclPair {
+    enum Source {
+        case function(FunctionDeclSyntax)
+        case variable(VariableDeclSyntax)
+    }
+
+    let sourceDecl: Source
+    let witnessDecl: VariableDeclSyntax
+}
+
 /// Implementation of the `@ProtocolWitness` attached macro. This macro adds a struct called `Witness`
 /// to the class it's attached to. The struct contains member variables with closure types corresponding to all non-
 /// generic functions in the class. The struct also contains a static `live` function for constructing the live instance
@@ -30,21 +40,20 @@ public struct ProtocolWitnessMacro: MemberMacro {
             return []
         }
 
-        // Functions eligible to be witnessed
-        let eligibleFunctions = classDecl.memberBlock.members.compactMap { blockItem -> FunctionDeclSyntax? in
-            guard let function = blockItem.decl.as(FunctionDeclSyntax.self) else { return nil }
-            guard function.genericParameterClause == nil else {
-                if !ignoreGenerics {
-                    context.diagnose(Diagnostic(node: function, message: ProtocolWitnessDiagnostic.noGenericProtocolWitnesses))
-                }
+        // Generate witness closure variables for properties and functions
+        let witnessDeclPairs = classDecl.memberBlock.members.compactMap { blockItem -> DeclPair? in
+            if let function = blockItem.decl.as(FunctionDeclSyntax.self) {
+                return makeClosure(for: function, in: context, ignoreGenerics: ignoreGenerics)
+            } else if let variable = blockItem.decl.as(VariableDeclSyntax.self) {
+                return makeClosure(for: variable, in: context)
+            } else {
                 return nil
             }
-            return function
         }
 
-        // Generate the members of the Witness struct
-        let witnessVariables = makeWitnessClosureVariables(functions: eligibleFunctions, in: context)
-        let liveFunction = makeLiveFunction(classDecl: classDecl, functions: eligibleFunctions, witnessVariables: witnessVariables)
+        // Generate the witness member block
+        let liveFunction = makeLiveFunction(classDecl: classDecl, pairs: witnessDeclPairs)
+        let witnessVariables = witnessDeclPairs.map(\.witnessDecl)
         let witnessMemberBlock = makeMemberBlock(with: witnessVariables + [liveFunction])
 
         let witnessDecl: DeclSyntax = """
@@ -57,68 +66,79 @@ public struct ProtocolWitnessMacro: MemberMacro {
 
     // MARK: - Private helpers
 
-    /// Generate the member variables of the `Witness` struct
-    private static func makeWitnessClosureVariables(functions: [FunctionDeclSyntax], in context: some MacroExpansionContext) -> [VariableDeclSyntax] {
-        functions.map { function -> VariableDeclSyntax in
-            var variableName = function.name.text
-            var closureParameters: [TupleTypeElementSyntax] = []
-            let functionParameters = function.signature.parameterClause.parameters
-            for (index, parameter) in functionParameters.enumerated() {
-                let trailing: (comma: TokenSyntax, trivia: Trivia)? = index == functionParameters.count - 1 ? nil : (.commaToken(), .space)
-                if parameter.firstName.tokenKind == .wildcard {
-                    let closureParam = TupleTypeElementSyntax(
-                        firstName: .wildcardToken(trailingTrivia: .space),
-                        secondName: parameter.secondName,
-                        colon: .colonToken(),
-                        type: parameter.type,
-                        trailingComma: trailing?.comma,
-                        trailingTrivia: trailing?.trivia
-                    )
-                    closureParameters.append(closureParam)
-                } else {
-                    variableName.append(parameter.firstName.text.capitalizeFirstLetter())
-                    let closureParam = TupleTypeElementSyntax(
-                        type: parameter.type,
-                        trailingComma: trailing?.comma,
-                        trailingTrivia: trailing?.trivia
-                    )
-                    closureParameters.append(closureParam)
-                }
+    private static func makeClosure(for function: FunctionDeclSyntax, in context: some MacroExpansionContext, ignoreGenerics: Bool) -> DeclPair? {
+        guard function.genericParameterClause == nil else {
+            if !ignoreGenerics {
+                context.diagnose(Diagnostic(node: function, message: ProtocolWitnessDiagnostic.noGenericProtocolWitnesses))
             }
+            return nil
+        }
 
-            let functionEffects = function.signature.effectSpecifiers
-            let voidReturnType = IdentifierTypeSyntax(name: .identifier("Void"))
-            return VariableDeclSyntax(bindingSpecifier: .keyword(.var)) {
-                PatternBindingSyntax(
-                    leadingTrivia: .space,
-                    pattern: IdentifierPatternSyntax(identifier: .identifier(variableName)),
-                    typeAnnotation: TypeAnnotationSyntax(
-                        colon: .colonToken(),
-                        type: FunctionTypeSyntax(
-                            parameters: TupleTypeElementListSyntax(closureParameters),
-                            effectSpecifiers: TypeEffectSpecifiersSyntax(
-                                asyncSpecifier: functionEffects?.asyncSpecifier,
-                                throwsSpecifier: functionEffects?.throwsSpecifier
-                            ),
-                            returnClause: ReturnClauseSyntax.init(
-                                arrow: .arrowToken(),
-                                type: (function.signature.returnClause?.type) ?? voidReturnType.as(TypeSyntax.self)!
-                            )
+        var variableName = function.name.text
+        var closureParameters: [TupleTypeElementSyntax] = []
+        let functionParameters = function.signature.parameterClause.parameters
+        for (index, parameter) in functionParameters.enumerated() {
+            let trailing: (comma: TokenSyntax, trivia: Trivia)? = index == functionParameters.count - 1 ? nil : (.commaToken(), .space)
+            if parameter.firstName.tokenKind == .wildcard {
+                let closureParam = TupleTypeElementSyntax(
+                    firstName: .wildcardToken(trailingTrivia: .space),
+                    secondName: parameter.secondName,
+                    colon: .colonToken(),
+                    type: parameter.type,
+                    trailingComma: trailing?.comma,
+                    trailingTrivia: trailing?.trivia
+                )
+                closureParameters.append(closureParam)
+            } else {
+                variableName.append(parameter.firstName.text.capitalizeFirstLetter())
+                let closureParam = TupleTypeElementSyntax(
+                    type: parameter.type,
+                    trailingComma: trailing?.comma,
+                    trailingTrivia: trailing?.trivia
+                )
+                closureParameters.append(closureParam)
+            }
+        }
+
+        let functionEffects = function.signature.effectSpecifiers
+        let voidReturnType = IdentifierTypeSyntax(name: .identifier("Void"))
+        let witnessVariable = VariableDeclSyntax(bindingSpecifier: .keyword(.var)) {
+            PatternBindingSyntax(
+                leadingTrivia: .space,
+                pattern: IdentifierPatternSyntax(identifier: .identifier(variableName)),
+                typeAnnotation: TypeAnnotationSyntax(
+                    colon: .colonToken(),
+                    type: FunctionTypeSyntax(
+                        parameters: TupleTypeElementListSyntax(closureParameters),
+                        effectSpecifiers: TypeEffectSpecifiersSyntax(
+                            asyncSpecifier: functionEffects?.asyncSpecifier,
+                            throwsSpecifier: functionEffects?.throwsSpecifier
+                        ),
+                        returnClause: ReturnClauseSyntax.init(
+                            arrow: .arrowToken(),
+                            type: (function.signature.returnClause?.type) ?? voidReturnType.as(TypeSyntax.self)!
                         )
                     )
                 )
-            }
+            )
         }
+        return DeclPair(sourceDecl: .function(function), witnessDecl: witnessVariable)
+    }
+
+    private static func makeClosure(for variable: VariableDeclSyntax, in context: some MacroExpansionContext) -> DeclPair? {
+        // TODO: Implement
+        return nil
     }
 
     /// Generate the "live" function of the `Witness` struct
-    private static func makeLiveFunction(
-        classDecl: ClassDeclSyntax,
-        functions: [FunctionDeclSyntax],
-        witnessVariables: [VariableDeclSyntax]
-    ) -> DeclSyntax {
-        let arguments: [LabeledExprSyntax] = zip(functions, witnessVariables).enumerated().compactMap { index, functionAndVariable -> LabeledExprSyntax? in
-            let (function, variable) = functionAndVariable
+    private static func makeLiveFunction(classDecl: ClassDeclSyntax, pairs: [DeclPair]) -> DeclSyntax {
+        let arguments: [LabeledExprSyntax] = pairs.enumerated().compactMap { index, pair -> LabeledExprSyntax? in
+            guard case .function(let function) = pair.sourceDecl else {
+                // TODO: Implement for variables
+                return nil
+            }
+
+            let variable = pair.witnessDecl
             guard let label = variable.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?.identifier else {
                 assertionFailure("Failed to determine label")
                 return nil
@@ -148,7 +168,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
 
             let functionCallCodeBlock = CodeBlockItemSyntax(item: .expr(functionCallExpression))
             let closureExpression = ClosureExprSyntax(leftBrace: .leftBraceToken(), statements: [functionCallCodeBlock], rightBrace: .rightBraceToken())
-            let addComma = index != witnessVariables.count - 1
+            let addComma = index != pairs.count - 1
             return LabeledExprSyntax(
                 leadingTrivia: index == 0 ? nil : .newline,
                 label: label,
