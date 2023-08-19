@@ -41,3 +41,48 @@ struct APIClient {
 Using a protocol witness instead of a protocol means that we can create as many variations of the `APIClient` as we want
 without needing a bunch of new types and boilerplate. In our tests, we can replace function implementation on a
 test-by-test basis.
+
+But this strategy is not without its faults either. What if your witness needs to manage a lot of mutable state? You
+could capture state variables in your witness closures, but eventually this starts to feel like we're fighting the
+system, especially when we could be using a class (or actor). What if we could build our dependency as a class like we'd
+prefer while also leveraging the flexibiliy of protocol witnesses for abstraction and testability?
+
+## The Macro
+
+This project aims to solve the problem decribed above. You can build your dependency as a class or actor, then annotate
+it with the `@ProtocolWitness` macro. At compile time, the macro generates a new type for you under the namespace of
+your dependency called `Witness`. This new type is a struct that mirrors your class/actor using closures instead of
+functions and properties. The `Witness` type contains a static function called `live` for instantiating the "live"
+version of your dependency using an instance of your class/actor to implement the closures. For example:
+
+```swift
+// Given the following class, annotated with the macro:
+
+@ProtocolWitness
+final class APIClient {
+    private let session = URLSession.shared
+
+    func fetchAuthors(named: String) async throws -> [Author] {
+        let (data, _) = try await session.data(from: .authorsURL(name: name))
+        return try JSONDecoder().decode([Author].self, from: data)
+    }
+}
+
+// The compiler will generate the following new type under the `APIClient` namespace:
+
+final class APIClient {
+    ...
+
+    struct Witness {
+        var fetchAuthorsNamed: (String) async throws -> [Author]
+
+        static func live(_ underlying: APIClient) -> Witness {
+            self.init(
+                fetchAuthorsNamed: {
+                    try await underlying.APIClient(named: $0)
+                }
+            )
+        }
+    }
+}
+```
