@@ -144,28 +144,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
                 return nil
             }
 
-            let functionParameters = function.signature.parameterClause.parameters
-            let underlyingFunctionArguments: [LabeledExprSyntax] = functionParameters.enumerated().map { index, parameter in
-                let label: TokenSyntax? = parameter.firstName.tokenKind == .wildcard ? nil : parameter.firstName.trimmed
-                let expression: ExprSyntax = "$\(literal: index)"
-                let trailing: (comma: TokenSyntax, trivia: Trivia)? = index == functionParameters.count - 1 ? nil : (.commaToken(), .space)
-                return LabeledExprSyntax(
-                    label: label,
-                    colon: label != nil ? .colonToken() : nil,
-                    expression: expression,
-                    trailingComma: trailing?.comma,
-                    trailingTrivia: trailing?.trivia
-                )
-            }
-            let argumentList = LabeledExprListSyntax(underlyingFunctionArguments)
-            var functionCallExpression: ExprSyntax = "underlying.\(function.name.trimmed)(\(argumentList))"
-            if function.signature.effectSpecifiers?.asyncSpecifier != nil {
-                functionCallExpression = "await \(functionCallExpression)"
-            }
-            if function.signature.effectSpecifiers?.throwsSpecifier != nil {
-                functionCallExpression = "try \(functionCallExpression)"
-            }
-
+            let functionCallExpression = makeLiveFunctionCallExpression(for: function)
             let functionCallCodeBlock = CodeBlockItemSyntax(item: .expr(functionCallExpression))
             let closureExpression = ClosureExprSyntax(leftBrace: .leftBraceToken(), statements: [functionCallCodeBlock], rightBrace: .rightBraceToken())
             let addComma = index != pairs.count - 1
@@ -187,6 +166,31 @@ public struct ProtocolWitnessMacro: MemberMacro {
             )
         }
         """
+    }
+
+    private static func makeLiveFunctionCallExpression(for function: FunctionDeclSyntax) -> ExprSyntax {
+        let functionParameters = function.signature.parameterClause.parameters
+        let underlyingFunctionArguments: [LabeledExprSyntax] = functionParameters.enumerated().map { index, parameter in
+            let label: TokenSyntax? = parameter.firstName.tokenKind == .wildcard ? nil : parameter.firstName.trimmed
+            let expression: ExprSyntax = "$\(literal: index)"
+            let trailing: (comma: TokenSyntax, trivia: Trivia)? = index == functionParameters.count - 1 ? nil : (.commaToken(), .space)
+            return LabeledExprSyntax(
+                label: label,
+                colon: label != nil ? .colonToken() : nil,
+                expression: expression,
+                trailingComma: trailing?.comma,
+                trailingTrivia: trailing?.trivia
+            )
+        }
+        let argumentList = LabeledExprListSyntax(underlyingFunctionArguments)
+        var functionCallExpression: ExprSyntax = "underlying.\(function.name.trimmed)(\(argumentList))"
+        if function.signature.effectSpecifiers?.asyncSpecifier != nil {
+            functionCallExpression = "await \(functionCallExpression)"
+        }
+        if function.signature.effectSpecifiers?.throwsSpecifier != nil {
+            functionCallExpression = "try \(functionCallExpression)"
+        }
+        return functionCallExpression
     }
 
     private static func makeMemberBlock(with decls: [any DeclSyntaxProtocol]) -> MemberBlockItemListSyntax {
