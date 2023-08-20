@@ -207,7 +207,7 @@ final class ProtocolWitnessTests: XCTestCase {
             class MyAPI<Foo: Equatable, Bar: Hashable> {
                 func doSomething(foo: Foo, bar: Bar) {}
 
-                struct Witness<Foo: Equatable, Bar: Hashable> {
+                struct Witness {
                     var doSomethingFooBar: (Foo, Bar) -> Void
 
                     static func live(_ underlying: MyAPI<Foo, Bar>) -> Witness {
