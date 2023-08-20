@@ -112,6 +112,9 @@ final class ProtocolWitnessTests: XCTestCase {
                 }
             }
             """,
+            diagnostics: [
+                DiagnosticSpec(message: "Variables without a type annotation will not be included in the protocol witness", line: 4, column: 5, severity: .warning)
+            ],
             macros: testMacros
         )
     }

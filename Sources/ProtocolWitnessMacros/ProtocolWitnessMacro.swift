@@ -14,7 +14,7 @@ struct ProtocolWitnessPlugin: CompilerPlugin {
 struct DeclPair {
     enum Source {
         case function(FunctionDeclSyntax)
-        case variable(VariableDeclSyntax)
+        case variable(VariableDeclSyntax, name: String)
     }
 
     let sourceDecl: Source
@@ -52,7 +52,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
         }
 
         // Generate the witness member block
-        let liveFunction = makeLiveFunction(classDecl: classDecl, pairs: witnessDeclPairs)
+        let liveFunction = makeLiveFunction(classDecl: classDecl, pairs: witnessDeclPairs, in: context)
         let witnessVariables = witnessDeclPairs.map(\.witnessDecl)
         let witnessMemberBlock = makeMemberBlock(with: witnessVariables + [liveFunction])
 
@@ -124,8 +124,9 @@ public struct ProtocolWitnessMacro: MemberMacro {
             return nil
         }
 
-        let witnessVariable = makeWitnessClosureVariable(name: pattern.identifier.text, returnType: typeAnnotation.type)
-        return DeclPair(sourceDecl: .variable(variable), witnessDecl: witnessVariable)
+        let identifierName = pattern.identifier.text
+        let witnessVariable = makeWitnessClosureVariable(name: identifierName, returnType: typeAnnotation.type)
+        return DeclPair(sourceDecl: .variable(variable, name: identifierName), witnessDecl: witnessVariable)
     }
 
     private static func makeWitnessClosureVariable(
@@ -160,20 +161,23 @@ public struct ProtocolWitnessMacro: MemberMacro {
     /// Generate the "live" function of the `Witness` struct
     private static func makeLiveFunction(classDecl: ClassDeclSyntax, pairs: [DeclPair], in context: some MacroExpansionContext) -> DeclSyntax {
         let arguments: [LabeledExprSyntax] = pairs.enumerated().compactMap { index, pair -> LabeledExprSyntax? in
-            guard case .function(let function) = pair.sourceDecl else {
-                // TODO: Implement for variables
-                return nil
-            }
-
             let variable = pair.witnessDecl
-            guard let label = variable.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?.identifier else {
+            guard let label = variable.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?.identifier.trimmed else {
                 context.diagnose(node: variable, message: .unexpected(message: "Expected an identifier"))
                 return nil
             }
 
-            let functionCallExpression = makeLiveFunctionCallExpression(for: function)
-            let functionCallCodeBlock = CodeBlockItemSyntax(item: .expr(functionCallExpression))
-            let closureExpression = ClosureExprSyntax(leftBrace: .leftBraceToken(), statements: [functionCallCodeBlock], rightBrace: .rightBraceToken())
+            // Generate the syntax for the function or variable call
+            let callExpression: ExprSyntax
+            switch pair.sourceDecl {
+            case .function(let function):
+                callExpression = makeLiveFunctionCallExpression(for: function)
+            case .variable(_, let variableName):
+                callExpression = makeLiveMemberAccessExpression(variableName: variableName)
+            }
+
+            let callCodeBlock = CodeBlockItemSyntax(item: .expr(callExpression))
+            let closureExpression = ClosureExprSyntax(leftBrace: .leftBraceToken(), statements: [callCodeBlock], rightBrace: .rightBraceToken())
             let addComma = index != pairs.count - 1
             return LabeledExprSyntax(
                 leadingTrivia: index == 0 ? nil : .newline,
@@ -195,6 +199,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
         """
     }
 
+    /// Generate the syntax for calling a function on the attached type
     private static func makeLiveFunctionCallExpression(for function: FunctionDeclSyntax) -> ExprSyntax {
         let functionParameters = function.signature.parameterClause.parameters
         let underlyingFunctionArguments: [LabeledExprSyntax] = functionParameters.enumerated().map { index, parameter in
@@ -218,6 +223,15 @@ public struct ProtocolWitnessMacro: MemberMacro {
             functionCallExpression = "try \(functionCallExpression)"
         }
         return functionCallExpression
+    }
+
+    private static func makeLiveMemberAccessExpression(variableName: String) -> ExprSyntax {
+        let expression = MemberAccessExprSyntax(
+            base: DeclReferenceExprSyntax(baseName: .identifier("underlying")),
+            period: .periodToken(),
+            declName: DeclReferenceExprSyntax(baseName: .identifier(variableName))
+        )
+        return expression.cast(ExprSyntax.self)
     }
 
     private static func makeMemberBlock(with decls: [any DeclSyntaxProtocol]) -> MemberBlockItemListSyntax {
