@@ -1,7 +1,7 @@
 import Foundation
 import SwiftSyntax
 
-protocol ActorOrClassDecl: DeclSyntaxProtocol {
+protocol ActorOrClassDecl: DeclSyntaxProtocol, DeclGroupSyntax {
     var name: TokenSyntax { get }
 }
 

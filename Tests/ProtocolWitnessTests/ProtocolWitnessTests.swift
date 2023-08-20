@@ -163,7 +163,7 @@ final class ProtocolWitnessTests: XCTestCase {
                 private var secret: Int = 456
 
                 func doSomething() {}
-                private func doSomethingPrivate {}
+                private func doSomethingPrivate() {}
             }
             """,
             expandedSource: """
@@ -172,7 +172,7 @@ final class ProtocolWitnessTests: XCTestCase {
                 private var secret: Int = 456
 
                 func doSomething() {}
-                private func doSomethingPrivate {}
+                private func doSomethingPrivate() {}
 
                 struct Witness {
                     var notSecret: () -> Int

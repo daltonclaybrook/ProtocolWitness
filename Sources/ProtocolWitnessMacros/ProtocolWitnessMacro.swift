@@ -89,6 +89,11 @@ public struct ProtocolWitnessMacro: MemberMacro {
             return nil
         }
 
+        if function.modifiers?.containsPrivateOrFilePrivate == true {
+            // Don't include functions that are private or fileprivate
+            return nil
+        }
+
         var variableName = function.name.text
         var closureParameters: [TupleTypeElementSyntax] = []
         let functionParameters = function.signature.parameterClause.parameters
@@ -137,6 +142,10 @@ public struct ProtocolWitnessMacro: MemberMacro {
         }
         guard let pattern = binding.pattern.as(IdentifierPatternSyntax.self) else {
             context.diagnose(node: binding, message: .unexpected(message: "Expected an identifier"))
+            return nil
+        }
+        if variable.modifiers?.containsPrivateOrFilePrivate == true {
+            // Don't include variables that are private or fileprivate
             return nil
         }
 
@@ -329,6 +338,15 @@ private extension String {
         } else {
             let restOfString = self[index(after: startIndex)...]
             return "\(firstLetter)\(restOfString)"
+        }
+    }
+}
+
+extension DeclModifierListSyntax {
+    var containsPrivateOrFilePrivate: Bool {
+        contains { syntax in
+            let kind = syntax.name.tokenKind
+            return kind == .keyword(.private) || kind == .keyword(.fileprivate)
         }
     }
 }
