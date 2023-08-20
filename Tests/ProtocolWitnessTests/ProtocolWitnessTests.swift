@@ -41,21 +41,21 @@ final class ProtocolWitnessTests: XCTestCase {
 
                     static func live(_ underlying: FooBar) -> Witness {
                         self.init(
-                             doSomething: {
-                                 underlying.doSomething()
-                             },
-                             fetchUserID: {
-                                 try await underlying.fetch(userID: $0)
-                             },
-                             fetchUserByName: {
-                                 try await underlying.fetchUser(byName: $0)
-                             },
-                             fetchUserName: {
-                                 try await underlying.fetchUserName($0)
-                             },
-                             searchUsersNameAge: {
-                                 try await underlying.searchUsers(name: $0, age: $1)
-                             }
+                            doSomething: {
+                                underlying.doSomething()
+                            },
+                            fetchUserID: {
+                                try await underlying.fetch(userID: $0)
+                            },
+                            fetchUserByName: {
+                                try await underlying.fetchUser(byName: $0)
+                            },
+                            fetchUserName: {
+                                try await underlying.fetchUserName($0)
+                            },
+                            searchUsersNameAge: {
+                                try await underlying.searchUsers(name: $0, age: $1)
+                            }
                         )
                     }
                 }
