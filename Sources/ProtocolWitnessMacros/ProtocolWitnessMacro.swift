@@ -34,14 +34,14 @@ public struct ProtocolWitnessMacro: MemberMacro {
     ) throws -> [DeclSyntax] {
         let ignoreGenerics = shouldIgnoreGenerics(with: node)
 
-        // Ensure that the declaration is a class
-        guard let classDecl = declaration.as(ClassDeclSyntax.self) else {
-            context.diagnose(node: declaration, message: .onlyClasses)
+        // Ensure that the declaration is an actor or class
+        guard let attachedTypeDecl = getActorOrClass(declaration: declaration) else {
+            context.diagnose(node: declaration, message: .onlyActorsAndClasses)
             return []
         }
 
         // Generate witness closure variables for properties and functions
-        let witnessDeclPairs = classDecl.memberBlock.members.compactMap { blockItem -> DeclPair? in
+        let witnessDeclPairs = declaration.memberBlock.members.compactMap { blockItem -> DeclPair? in
             if let function = blockItem.decl.as(FunctionDeclSyntax.self) {
                 return makeClosure(for: function, in: context, ignoreGenerics: ignoreGenerics)
             } else if let variable = blockItem.decl.as(VariableDeclSyntax.self) {
@@ -52,7 +52,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
         }
 
         // Generate the witness member block
-        let liveFunction = makeLiveFunction(classDecl: classDecl, pairs: witnessDeclPairs, in: context)
+        let liveFunction = makeLiveFunction(decl: attachedTypeDecl, pairs: witnessDeclPairs, in: context)
         let witnessVariables = witnessDeclPairs.map(\.witnessDecl)
         let witnessMemberBlock = makeMemberBlock(with: witnessVariables + [liveFunction])
 
@@ -65,6 +65,16 @@ public struct ProtocolWitnessMacro: MemberMacro {
     }
 
     // MARK: - Private helpers
+
+    private static func getActorOrClass(declaration: some DeclGroupSyntax) -> ActorOrClassDecl? {
+        if let actorDecl = declaration.as(ActorDeclSyntax.self) {
+            return actorDecl
+        } else if let classDecl = declaration.as(ClassDeclSyntax.self) {
+            return classDecl
+        } else {
+            return nil
+        }
+    }
 
     private static func makeClosure(for function: FunctionDeclSyntax, in context: some MacroExpansionContext, ignoreGenerics: Bool) -> DeclPair? {
         guard function.genericParameterClause == nil else {
@@ -159,7 +169,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
     }
 
     /// Generate the "live" function of the `Witness` struct
-    private static func makeLiveFunction(classDecl: ClassDeclSyntax, pairs: [DeclPair], in context: some MacroExpansionContext) -> DeclSyntax {
+    private static func makeLiveFunction(decl: ActorOrClassDecl, pairs: [DeclPair], in context: some MacroExpansionContext) -> DeclSyntax {
         let arguments: [LabeledExprSyntax] = pairs.enumerated().compactMap { index, pair -> LabeledExprSyntax? in
             let variable = pair.witnessDecl
             guard let label = variable.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?.identifier.trimmed else {
@@ -191,7 +201,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
 
         return """
 
-        static func live(_ underlying: \(classDecl.name.trimmed)) -> Witness {
+        static func live(_ underlying: \(decl.name.trimmed)) -> Witness {
             self.init(
                 \(argumentList)
             )
@@ -260,7 +270,7 @@ private extension MacroExpansionContext {
 }
 
 enum ProtocolWitnessDiagnostic: DiagnosticMessage {
-    case onlyClasses
+    case onlyActorsAndClasses
     case noGenericProtocolWitnesses
     case onlyOneBinding
     case missingTypeForVariable
@@ -268,8 +278,8 @@ enum ProtocolWitnessDiagnostic: DiagnosticMessage {
 
     var message: String {
         switch self {
-        case .onlyClasses:
-            return "Protocol witnesses are only supported for classes at this time"
+        case .onlyActorsAndClasses:
+            return "Protocol witnesses are only supported for actors and classes"
         case .noGenericProtocolWitnesses:
             return "Function with generic parameters will not be included in the protocol witness"
         case .onlyOneBinding:
@@ -287,7 +297,7 @@ enum ProtocolWitnessDiagnostic: DiagnosticMessage {
 
     var severity: DiagnosticSeverity {
         switch self {
-        case .onlyClasses, .unexpected:
+        case .onlyActorsAndClasses, .unexpected:
             return .error
         case .noGenericProtocolWitnesses, .onlyOneBinding, .missingTypeForVariable:
             return .warning

@@ -124,11 +124,12 @@ final class ProtocolWitnessTests: XCTestCase {
             """
             @ProtocolWitness
             actor MyAPI {
-                func doSomething()
+                func doSomething() {
+                }
             }
             """,
             expandedSource: """
-            class MyAPI {
+            actor MyAPI {
                 func doSomething()
 
                 struct Witness {
