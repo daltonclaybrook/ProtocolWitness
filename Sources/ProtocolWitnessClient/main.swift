@@ -19,6 +19,19 @@ class BlogAPI {
     func doSomethingGeneric<T>(foo: T) { }
 }
 
+@ProtocolWitness
+actor MyThreadSafeType {
+    var counter: Int = 0
+
+    func increment() {
+        counter += 1
+    }
+
+    func decrement() {
+        counter -= 1
+    }
+}
+
 @MainActor
 class BlogPostsViewModel: ObservableObject {
     @Published var posts: [Post] = []
