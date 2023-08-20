@@ -32,6 +32,17 @@ actor MyThreadSafeType {
     }
 }
 
+@ProtocolWitness
+final class MyGenericType<Foo: Equatable, Bar> {
+    let foo: Foo
+
+    init(foo: Foo) {
+        self.foo = foo
+    }
+
+    func doStuff(with bar: Bar) {}
+}
+
 @MainActor
 class BlogPostsViewModel: ObservableObject {
     @Published var posts: [Post] = []
