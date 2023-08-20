@@ -130,6 +130,7 @@ final class ProtocolWitnessTests: XCTestCase {
             """,
             expandedSource: """
             actor MyAPI {
+                var fooBar: Int = 123
                 func doSomething() {}
 
                 struct Witness {
@@ -229,8 +230,8 @@ final class ProtocolWitnessTests: XCTestCase {
             }
             """,
             diagnostics: [
-                .init(message: "Protocol witnesses are only supported for classes at this time", line: 1, column: 1),
-                .init(message: "Protocol witnesses are only supported for classes at this time", line: 5, column: 1)
+                .init(message: "Protocol witnesses are only supported for actors and classes", line: 1, column: 1),
+                .init(message: "Protocol witnesses are only supported for actors and classes", line: 5, column: 1)
             ],
             macros: testMacros
         )

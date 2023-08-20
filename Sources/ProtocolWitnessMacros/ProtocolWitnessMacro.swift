@@ -43,9 +43,9 @@ public struct ProtocolWitnessMacro: MemberMacro {
         // Generate witness closure variables for properties and functions
         let witnessDeclPairs = declaration.memberBlock.members.compactMap { blockItem -> DeclPair? in
             if let function = blockItem.decl.as(FunctionDeclSyntax.self) {
-                return makeClosure(for: function, in: context, ignoreGenerics: ignoreGenerics)
+                return makeClosure(for: function, in: context, ignoreGenerics: ignoreGenerics, decl: attachedTypeDecl)
             } else if let variable = blockItem.decl.as(VariableDeclSyntax.self) {
-                return makeClosure(for: variable, in: context)
+                return makeClosure(for: variable, in: context, decl: attachedTypeDecl)
             } else {
                 return nil
             }
@@ -76,7 +76,12 @@ public struct ProtocolWitnessMacro: MemberMacro {
         }
     }
 
-    private static func makeClosure(for function: FunctionDeclSyntax, in context: some MacroExpansionContext, ignoreGenerics: Bool) -> DeclPair? {
+    private static func makeClosure(
+        for function: FunctionDeclSyntax,
+        in context: some MacroExpansionContext,
+        ignoreGenerics: Bool,
+        decl: ActorOrClassDecl
+    ) -> DeclPair? {
         guard function.genericParameterClause == nil else {
             if !ignoreGenerics {
                 context.diagnose(node: function, message: .noGenericProtocolWitnesses)
@@ -115,12 +120,13 @@ public struct ProtocolWitnessMacro: MemberMacro {
             name: variableName,
             parameters: closureParameters,
             effects: functionEffects,
-            returnType: function.signature.returnClause?.type
+            returnType: function.signature.returnClause?.type,
+            decl: decl
         )
         return DeclPair(sourceDecl: .function(function), witnessDecl: witnessVariable)
     }
 
-    private static func makeClosure(for variable: VariableDeclSyntax, in context: some MacroExpansionContext) -> DeclPair? {
+    private static func makeClosure(for variable: VariableDeclSyntax, in context: some MacroExpansionContext, decl: ActorOrClassDecl) -> DeclPair? {
         guard variable.bindings.count == 1, let binding = variable.bindings.first else {
             context.diagnose(node: variable, message: .onlyOneBinding)
             return nil
@@ -135,7 +141,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
         }
 
         let identifierName = pattern.identifier.text
-        let witnessVariable = makeWitnessClosureVariable(name: identifierName, returnType: typeAnnotation.type)
+        let witnessVariable = makeWitnessClosureVariable(name: identifierName, returnType: typeAnnotation.type, decl: decl)
         return DeclPair(sourceDecl: .variable(variable, name: identifierName), witnessDecl: witnessVariable)
     }
 
@@ -143,9 +149,11 @@ public struct ProtocolWitnessMacro: MemberMacro {
         name: String,
         parameters: [TupleTypeElementSyntax] = [],
         effects: FunctionEffectSpecifiersSyntax? = nil,
-        returnType: TypeSyntax?
+        returnType: TypeSyntax?,
+        decl: ActorOrClassDecl
     ) -> VariableDeclSyntax {
         let voidReturnType = IdentifierTypeSyntax(name: .identifier("Void"))
+        let actorAsyncToken: TokenSyntax? = decl.isActor ? .keyword(.async) : nil
         return VariableDeclSyntax(bindingSpecifier: .keyword(.var)) {
             PatternBindingSyntax(
                 leadingTrivia: .space,
@@ -155,7 +163,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
                     type: FunctionTypeSyntax(
                         parameters: TupleTypeElementListSyntax(parameters),
                         effectSpecifiers: TypeEffectSpecifiersSyntax(
-                            asyncSpecifier: effects?.asyncSpecifier,
+                            asyncSpecifier: effects?.asyncSpecifier ?? actorAsyncToken,
                             throwsSpecifier: effects?.throwsSpecifier
                         ),
                         returnClause: ReturnClauseSyntax(
