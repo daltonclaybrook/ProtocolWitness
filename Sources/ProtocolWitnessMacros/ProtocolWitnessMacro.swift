@@ -36,7 +36,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
 
         // Ensure that the declaration is a class
         guard let classDecl = declaration.as(ClassDeclSyntax.self) else {
-            context.diagnose(Diagnostic(node: declaration, message: ProtocolWitnessDiagnostic.onlyClasses))
+            context.diagnose(node: declaration, message: .onlyClasses)
             return []
         }
 
@@ -69,7 +69,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
     private static func makeClosure(for function: FunctionDeclSyntax, in context: some MacroExpansionContext, ignoreGenerics: Bool) -> DeclPair? {
         guard function.genericParameterClause == nil else {
             if !ignoreGenerics {
-                context.diagnose(Diagnostic(node: function, message: ProtocolWitnessDiagnostic.noGenericProtocolWitnesses))
+                context.diagnose(node: function, message: .noGenericProtocolWitnesses)
             }
             return nil
         }
@@ -112,15 +112,15 @@ public struct ProtocolWitnessMacro: MemberMacro {
 
     private static func makeClosure(for variable: VariableDeclSyntax, in context: some MacroExpansionContext) -> DeclPair? {
         guard variable.bindings.count == 1, let binding = variable.bindings.first else {
-            context.diagnose(Diagnostic(node: variable, message: ProtocolWitnessDiagnostic.onlyOneBinding))
+            context.diagnose(node: variable, message: .onlyOneBinding)
             return nil
         }
         guard let typeAnnotation = binding.typeAnnotation else {
-            context.diagnose(Diagnostic(node: variable, message: ProtocolWitnessDiagnostic.missingTypeForVariable))
+            context.diagnose(node: variable, message: .missingTypeForVariable)
             return nil
         }
         guard let pattern = binding.pattern.as(IdentifierPatternSyntax.self) else {
-            context.diagnose(Diagnostic(node: binding, message: ProtocolWitnessDiagnostic.unexpected(message: "Expected an identifier")))
+            context.diagnose(node: binding, message: .unexpected(message: "Expected an identifier"))
             return nil
         }
 
@@ -158,7 +158,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
     }
 
     /// Generate the "live" function of the `Witness` struct
-    private static func makeLiveFunction(classDecl: ClassDeclSyntax, pairs: [DeclPair]) -> DeclSyntax {
+    private static func makeLiveFunction(classDecl: ClassDeclSyntax, pairs: [DeclPair], in context: some MacroExpansionContext) -> DeclSyntax {
         let arguments: [LabeledExprSyntax] = pairs.enumerated().compactMap { index, pair -> LabeledExprSyntax? in
             guard case .function(let function) = pair.sourceDecl else {
                 // TODO: Implement for variables
@@ -167,7 +167,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
 
             let variable = pair.witnessDecl
             guard let label = variable.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?.identifier else {
-                assertionFailure("Failed to determine label")
+                context.diagnose(node: variable, message: .unexpected(message: "Expected an identifier"))
                 return nil
             }
 
@@ -236,6 +236,12 @@ public struct ProtocolWitnessMacro: MemberMacro {
             return false
         }
         return expression.literal.tokenKind == .keyword(.true)
+    }
+}
+
+private extension MacroExpansionContext {
+    func diagnose(node: SyntaxProtocol, message: ProtocolWitnessDiagnostic) {
+        diagnose(Diagnostic(node: node, message: message))
     }
 }
 
