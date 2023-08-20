@@ -181,9 +181,9 @@ public struct ProtocolWitnessMacro: MemberMacro {
             let callExpression: ExprSyntax
             switch pair.sourceDecl {
             case .function(let function):
-                callExpression = makeLiveFunctionCallExpression(for: function)
+                callExpression = makeLiveFunctionCallExpression(for: function, decl: decl)
             case .variable(_, let variableName):
-                callExpression = makeLiveMemberAccessExpression(variableName: variableName)
+                callExpression = makeLiveMemberAccessExpression(variableName: variableName, decl: decl)
             }
 
             let callCodeBlock = CodeBlockItemSyntax(item: .expr(callExpression))
@@ -210,7 +210,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
     }
 
     /// Generate the syntax for calling a function on the attached type
-    private static func makeLiveFunctionCallExpression(for function: FunctionDeclSyntax) -> ExprSyntax {
+    private static func makeLiveFunctionCallExpression(for function: FunctionDeclSyntax, decl: ActorOrClassDecl) -> ExprSyntax {
         let functionParameters = function.signature.parameterClause.parameters
         let underlyingFunctionArguments: [LabeledExprSyntax] = functionParameters.enumerated().map { index, parameter in
             let label: TokenSyntax? = parameter.firstName.tokenKind == .wildcard ? nil : parameter.firstName.trimmed
@@ -226,7 +226,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
         }
         let argumentList = LabeledExprListSyntax(underlyingFunctionArguments)
         var functionCallExpression: ExprSyntax = "underlying.\(function.name.trimmed)(\(argumentList))"
-        if function.signature.effectSpecifiers?.asyncSpecifier != nil {
+        if function.signature.effectSpecifiers?.asyncSpecifier != nil || decl.isActor {
             functionCallExpression = "await \(functionCallExpression)"
         }
         if function.signature.effectSpecifiers?.throwsSpecifier != nil {
@@ -235,13 +235,20 @@ public struct ProtocolWitnessMacro: MemberMacro {
         return functionCallExpression
     }
 
-    private static func makeLiveMemberAccessExpression(variableName: String) -> ExprSyntax {
-        let expression = MemberAccessExprSyntax(
+    private static func makeLiveMemberAccessExpression(variableName: String, decl: ActorOrClassDecl) -> ExprSyntax {
+        var expression = MemberAccessExprSyntax(
+            leadingTrivia: decl.isActor ? .space : nil,
             base: DeclReferenceExprSyntax(baseName: .identifier("underlying")),
             period: .periodToken(),
             declName: DeclReferenceExprSyntax(baseName: .identifier(variableName))
-        )
-        return expression.cast(ExprSyntax.self)
+        ).cast(ExprSyntax.self)
+
+        if decl.isActor {
+            // If the type is an actor, wrap the expression in an `AwaitExprSyntax`
+            expression = AwaitExprSyntax(awaitKeyword: .keyword(.await), expression: expression).cast(ExprSyntax.self)
+        }
+
+        return expression
     }
 
     private static func makeMemberBlock(with decls: [any DeclSyntaxProtocol]) -> MemberBlockItemListSyntax {

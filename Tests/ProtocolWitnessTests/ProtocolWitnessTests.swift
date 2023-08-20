@@ -124,19 +124,23 @@ final class ProtocolWitnessTests: XCTestCase {
             """
             @ProtocolWitness
             actor MyAPI {
-                func doSomething() {
-                }
+                var fooBar: Int = 123
+                func doSomething() {}
             }
             """,
             expandedSource: """
             actor MyAPI {
-                func doSomething()
+                func doSomething() {}
 
                 struct Witness {
+                    var fooBar: () async -> Int
                     var doSomething: () async -> Void
 
                     static func live(_ underlying: MyAPI) -> Witness {
                         self.init(
+                            fooBar: {
+                                await underlying.fooBar
+                            },
                             doSomething: {
                                 await underlying.doSomething()
                             }
