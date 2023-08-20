@@ -3,6 +3,7 @@ import SwiftSyntax
 
 protocol ActorOrClassDecl: DeclSyntaxProtocol, DeclGroupSyntax {
     var name: TokenSyntax { get }
+    var genericParameterClause: GenericParameterClauseSyntax? { get }
 }
 
 extension ActorDeclSyntax: ActorOrClassDecl {}

@@ -199,21 +199,21 @@ final class ProtocolWitnessTests: XCTestCase {
         assertMacroExpansion(
             """
             @ProtocolWitness
-            class MyAPI<Generic: Equatable> {
-                func doSomething(value: Generic) {}
+            class MyAPI<Foo: Equatable, Bar: Hashable> {
+                func doSomething(foo: Foo, bar: Bar) {}
             }
             """,
             expandedSource: """
-            class MyAPI<Generic: Equatable> {
-                func doSomething(value: Generic) {}
+            class MyAPI<Foo: Equatable, Bar: Hashable> {
+                func doSomething(foo: Foo, bar: Bar) {}
 
-                struct Witness<Generic: Equatable> {
-                    var doSomethingValue: (Generic) -> Void
+                struct Witness<Foo: Equatable, Bar: Hashable> {
+                    var doSomethingFooBar: (Foo, Bar) -> Void
 
-                    static func live(_ underlying: MyAPI<Generic>) -> Witness {
+                    static func live(_ underlying: MyAPI<Foo, Bar>) -> Witness {
                         self.init(
-                            doSomethingValue: {
-                                underlying.doSomething(value: $0)
+                            doSomethingFooBar: {
+                                underlying.doSomething(foo: $0, bar: $1)
                             }
                         )
                     }
