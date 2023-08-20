@@ -154,6 +154,47 @@ final class ProtocolWitnessTests: XCTestCase {
         )
     }
 
+    func test_ifFunctionOrPropertyIsPrivate_memberIsOmittedFromWitness() {
+        assertMacroExpansion(
+            """
+            @ProtocolWitness
+            class MyAPI {
+                var notSecret: Int = 123
+                private var secret: Int = 456
+
+                func doSomething() {}
+                private func doSomethingPrivate {}
+            }
+            """,
+            expandedSource: """
+            class MyAPI {
+                var notSecret: Int = 123
+                private var secret: Int = 456
+
+                func doSomething() {}
+                private func doSomethingPrivate {}
+
+                struct Witness {
+                    var notSecret: () -> Int
+                    var doSomething: () -> Void
+
+                    static func live(_ underlying: MyAPI) -> Witness {
+                        self.init(
+                            notSecret: {
+                                underlying.notSecret
+                            },
+                            doSomething: {
+                                underlying.doSomething()
+                            }
+                        )
+                    }
+                }
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
     func test_ifGenericsAreNotIgnored_diagnosticsAreEmitted() {
         assertMacroExpansion(
             """
