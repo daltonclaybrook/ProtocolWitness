@@ -195,6 +195,35 @@ final class ProtocolWitnessTests: XCTestCase {
         )
     }
 
+    func test_ifTypeHasGenericParameters_WitnessIsGeneric() {
+        assertMacroExpansion(
+            """
+            @ProtocolWitness
+            class MyAPI<Generic: Equatable> {
+                func doSomething(value: Generic) {}
+            }
+            """,
+            expandedSource: """
+            class MyAPI<Generic: Equatable> {
+                func doSomething(value: Generic) {}
+
+                struct Witness<Generic: Equatable> {
+                    var doSomethingValue: (Generic) -> Void
+
+                    static func live(_ underlying: MyAPI<Generic>) -> Witness {
+                        self.init(
+                            doSomethingValue: {
+                                underlying.doSomething(value: $0)
+                            }
+                        )
+                    }
+                }
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
     func test_ifGenericsAreNotIgnored_diagnosticsAreEmitted() {
         assertMacroExpansion(
             """
