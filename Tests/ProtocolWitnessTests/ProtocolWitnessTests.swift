@@ -73,23 +73,39 @@ final class ProtocolWitnessTests: XCTestCase {
                 var foo: Int = 123
                 let bar = "abc"
                 var fizz: Int { 123 }
+                var buzz: Int
+
+                init(buzz: Int) {
+                    self.buzz = buzz
+                }
             }
             """,
             expandedSource: """
             class MyAPI {
                 var foo: Int = 123
                 let bar = "abc"
+                var fizz: Int { 123 }
+                var buzz: Int
+
+                init(buzz: Int) {
+                    self.buzz = buzz
+                }
 
                 struct Witness {
                     var foo: () -> Int
+                    var fizz: () -> Int
+                    var buzz: () -> Int
 
                     static func live(_ underlying: MyAPI) -> Witness {
                         self.init(
                             foo: {
                                 underlying.foo
                             },
-                            bar: {
-                                underlying.bar
+                            fizz: {
+                                underlying.fizz
+                            },
+                            buzz: {
+                                underlying.buzz
                             }
                         )
                     }

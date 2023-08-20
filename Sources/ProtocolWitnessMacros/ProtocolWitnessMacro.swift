@@ -101,33 +101,60 @@ public struct ProtocolWitnessMacro: MemberMacro {
         }
 
         let functionEffects = function.signature.effectSpecifiers
+        let witnessVariable = makeWitnessClosureVariable(
+            name: variableName,
+            parameters: closureParameters,
+            effects: functionEffects,
+            returnType: function.signature.returnClause?.type
+        )
+        return DeclPair(sourceDecl: .function(function), witnessDecl: witnessVariable)
+    }
+
+    private static func makeClosure(for variable: VariableDeclSyntax, in context: some MacroExpansionContext) -> DeclPair? {
+        guard variable.bindings.count == 1, let binding = variable.bindings.first else {
+            context.diagnose(Diagnostic(node: variable, message: ProtocolWitnessDiagnostic.onlyOneBinding))
+            return nil
+        }
+        guard let typeAnnotation = binding.typeAnnotation else {
+            context.diagnose(Diagnostic(node: variable, message: ProtocolWitnessDiagnostic.missingTypeForVariable))
+            return nil
+        }
+        guard let pattern = binding.pattern.as(IdentifierPatternSyntax.self) else {
+            context.diagnose(Diagnostic(node: binding, message: ProtocolWitnessDiagnostic.unexpected(message: "Expected an identifier")))
+            return nil
+        }
+
+        let witnessVariable = makeWitnessClosureVariable(name: pattern.identifier.text, returnType: typeAnnotation.type)
+        return DeclPair(sourceDecl: .variable(variable), witnessDecl: witnessVariable)
+    }
+
+    private static func makeWitnessClosureVariable(
+        name: String,
+        parameters: [TupleTypeElementSyntax] = [],
+        effects: FunctionEffectSpecifiersSyntax? = nil,
+        returnType: TypeSyntax?
+    ) -> VariableDeclSyntax {
         let voidReturnType = IdentifierTypeSyntax(name: .identifier("Void"))
-        let witnessVariable = VariableDeclSyntax(bindingSpecifier: .keyword(.var)) {
+        return VariableDeclSyntax(bindingSpecifier: .keyword(.var)) {
             PatternBindingSyntax(
                 leadingTrivia: .space,
-                pattern: IdentifierPatternSyntax(identifier: .identifier(variableName)),
+                pattern: IdentifierPatternSyntax(identifier: .identifier(name)),
                 typeAnnotation: TypeAnnotationSyntax(
                     colon: .colonToken(),
                     type: FunctionTypeSyntax(
-                        parameters: TupleTypeElementListSyntax(closureParameters),
+                        parameters: TupleTypeElementListSyntax(parameters),
                         effectSpecifiers: TypeEffectSpecifiersSyntax(
-                            asyncSpecifier: functionEffects?.asyncSpecifier,
-                            throwsSpecifier: functionEffects?.throwsSpecifier
+                            asyncSpecifier: effects?.asyncSpecifier,
+                            throwsSpecifier: effects?.throwsSpecifier
                         ),
-                        returnClause: ReturnClauseSyntax.init(
+                        returnClause: ReturnClauseSyntax(
                             arrow: .arrowToken(),
-                            type: (function.signature.returnClause?.type) ?? voidReturnType.as(TypeSyntax.self)!
+                            type: returnType ?? voidReturnType.as(TypeSyntax.self)!
                         )
                     )
                 )
             )
         }
-        return DeclPair(sourceDecl: .function(function), witnessDecl: witnessVariable)
-    }
-
-    private static func makeClosure(for variable: VariableDeclSyntax, in context: some MacroExpansionContext) -> DeclPair? {
-        // TODO: Implement
-        return nil
     }
 
     /// Generate the "live" function of the `Witness` struct
@@ -212,31 +239,37 @@ public struct ProtocolWitnessMacro: MemberMacro {
     }
 }
 
-enum ProtocolWitnessDiagnostic: String, DiagnosticMessage {
-    case unknownError
+enum ProtocolWitnessDiagnostic: DiagnosticMessage {
     case onlyClasses
     case noGenericProtocolWitnesses
+    case onlyOneBinding
+    case missingTypeForVariable
+    case unexpected(message: String)
 
     var message: String {
         switch self {
-        case .unknownError:
-            return "An unknown error occurred"
         case .onlyClasses:
             return "Protocol witnesses are only supported for classes at this time"
         case .noGenericProtocolWitnesses:
             return "Function with generic parameters will not be included in the protocol witness"
+        case .onlyOneBinding:
+            return "Variable declarations with multiple bindings will not be included in the protocol witness"
+        case .missingTypeForVariable:
+            return "Variables without a type annotation will not be included in the protocol witness"
+        case .unexpected(let message):
+            return "Unexpected condition in protocol witness: \(message). Please file a bug report."
         }
     }
 
     var diagnosticID: MessageID {
-        MessageID(domain: "ProtocolWitnessMacros", id: rawValue)
+        MessageID(domain: "ProtocolWitnessMacros", id: String(describing: self))
     }
 
     var severity: DiagnosticSeverity {
         switch self {
-        case .unknownError, .onlyClasses:
+        case .onlyClasses, .unexpected:
             return .error
-        case .noGenericProtocolWitnesses:
+        case .noGenericProtocolWitnesses, .onlyOneBinding, .missingTypeForVariable:
             return .warning
         }
     }
