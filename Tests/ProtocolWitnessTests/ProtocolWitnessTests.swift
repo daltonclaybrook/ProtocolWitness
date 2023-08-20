@@ -201,11 +201,13 @@ final class ProtocolWitnessTests: XCTestCase {
             @ProtocolWitness
             class MyAPI<Foo: Equatable, Bar: Hashable> {
                 func doSomething(foo: Foo, bar: Bar) {}
+                private func testing(result: Result<Int, Error>) {}
             }
             """,
             expandedSource: """
             class MyAPI<Foo: Equatable, Bar: Hashable> {
                 func doSomething(foo: Foo, bar: Bar) {}
+                private func testing(result: Result<Int, Error>) {}
 
                 struct Witness {
                     var doSomethingFooBar: (Foo, Bar) -> Void

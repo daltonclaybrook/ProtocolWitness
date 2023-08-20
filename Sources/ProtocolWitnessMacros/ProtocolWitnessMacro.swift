@@ -216,9 +216,20 @@ public struct ProtocolWitnessMacro: MemberMacro {
         }
         let argumentList = LabeledExprListSyntax(arguments)
 
+        // Make the type syntax for the underlying function parameter
+        let argumentClause: GenericArgumentClauseSyntax? = decl.genericParameterClause.map { parameterClause in
+            let parameters = parameterClause.parameters
+            let arguments = parameters.enumerated().map { index, parameter in
+                let comma: TokenSyntax? = index == parameters.count - 1 ? nil : .commaToken()
+                return GenericArgumentSyntax(argument: IdentifierTypeSyntax(name: parameter.name.trimmed), trailingComma: comma)
+            }
+            return GenericArgumentClauseSyntax(arguments: GenericArgumentListSyntax(arguments))
+        }
+        let underlyingType = IdentifierTypeSyntax(name: decl.name.trimmed, genericArgumentClause: argumentClause)
+
         return """
 
-        static func live(_ underlying: \(decl.name.trimmed)) -> Witness {
+        static func live(_ underlying: \(underlyingType)) -> Witness {
             self.init(
                 \(argumentList)
             )
