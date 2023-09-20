@@ -89,7 +89,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
             return nil
         }
 
-        if function.modifiers?.containsPrivateOrFilePrivate == true {
+        if function.modifiers.containsPrivateOrFilePrivate {
             // Don't include functions that are private or fileprivate
             return nil
         }
@@ -144,7 +144,7 @@ public struct ProtocolWitnessMacro: MemberMacro {
             context.diagnose(node: binding, message: .unexpected(message: "Expected an identifier"))
             return nil
         }
-        if variable.modifiers?.containsPrivateOrFilePrivate == true {
+        if variable.modifiers.containsPrivateOrFilePrivate {
             // Don't include variables that are private or fileprivate
             return nil
         }

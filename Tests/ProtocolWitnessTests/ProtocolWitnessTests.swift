@@ -10,7 +10,6 @@ let testMacros: [String: Macro.Type] = [
     "ProtocolWitness": ProtocolWitnessMacro.self
 ]
 
-
 final class ProtocolWitnessTests: XCTestCase {
     func testBasicProtocolWitnessIsGenerated() {
         assertMacroExpansion(
